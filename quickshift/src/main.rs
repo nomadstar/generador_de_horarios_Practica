@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 use petgraph::graph::{NodeIndex, DiGraph, UnGraph};
 use petgraph::Direction;
+use calamine::{Reader, Xlsx, open_workbook, Data};
 
 // Estructuras base para los datos
 #[derive(Debug, Clone)]
@@ -79,67 +80,225 @@ fn set_values_recursive(
     }
 }
 
-// Traducción de rutaCritica.py - función getRamoCritico
-fn get_ramo_critico() -> (HashMap<String, RamoDisponible>, String) {
-    println!("Simulando getRamoCritico...");
-    
-    // Datos de ejemplo (en la implementación real se leería de Excel)
+// Nueva función para leer Excel de malla curricular
+fn leer_malla_excel(nombre_archivo: &str) -> Result<HashMap<String, RamoDisponible>, Box<dyn std::error::Error>> {
+    let mut workbook: Xlsx<_> = open_workbook(nombre_archivo)?;
     let mut ramos_disponibles = HashMap::new();
     
-    // Simular ramos críticos
-    ramos_disponibles.insert("CIT3313".to_string(), RamoDisponible {
-        nombre: "Algoritmos y Programación".to_string(),
-        codigo: "CIT3313".to_string(),
-        holgura: 0, // Ramo crítico
-        numb_correlativo: 53,
-        critico: true,
-        codigo_ref: Some("CIT3313".to_string()),
-    });
+    // Obtener la primera hoja disponible en lugar de buscar "Sheet1" específicamente
+    let sheet_names = workbook.sheet_names().to_owned();
+    if sheet_names.is_empty() {
+        return Err("No se encontraron hojas en el archivo Excel".into());
+    }
     
-    ramos_disponibles.insert("CIT3211".to_string(), RamoDisponible {
-        nombre: "Bases de Datos".to_string(),
-        codigo: "CIT3211".to_string(),
-        holgura: 0, // Ramo crítico
-        numb_correlativo: 52,
-        critico: true,
-        codigo_ref: Some("CIT3211".to_string()),
-    });
+    let primera_hoja = &sheet_names[0];
+    println!("Leyendo hoja: {}", primera_hoja);
     
-    // Simular ramos no críticos
-    ramos_disponibles.insert("CIT3413".to_string(), RamoDisponible {
-        nombre: "Redes de Computadores".to_string(),
-        codigo: "CIT3413".to_string(),
-        holgura: 2, // Ramo no crítico
-        numb_correlativo: 54,
-        critico: false,
-        codigo_ref: Some("CIT3413".to_string()),
-    });
+    let range = workbook.worksheet_range(primera_hoja)?;
     
-    ramos_disponibles.insert("CFG-1".to_string(), RamoDisponible {
-        nombre: "Curso de Formación General".to_string(),
-        codigo: "CFG-1".to_string(),
-        holgura: 3,
-        numb_correlativo: 10,
-        critico: false,
-        codigo_ref: Some("CFG-1".to_string()),
-    });
-
-    println!("Ramos críticos:");
-    for (codigo, ramo) in &ramos_disponibles {
-        if ramo.critico {
-            println!("->> {} - {}", ramo.nombre, codigo);
+    // Iterar sobre las filas (asumiendo que la primera fila son headers)
+    for (row_idx, row) in range.rows().enumerate() {
+        if row_idx == 0 { continue; } // Saltar header
+        
+        // Extraer datos de las columnas (ajusta según tu formato de Excel)
+        let codigo = match row.get(0) {
+            Some(Data::String(s)) => s.clone(),
+            Some(Data::Float(f)) => f.to_string(),
+            Some(Data::Int(i)) => i.to_string(),
+            _ => "".to_string(),
+        };
+        let nombre = match row.get(1) {
+            Some(Data::String(s)) => s.clone(),
+            Some(Data::Float(f)) => f.to_string(),
+            Some(Data::Int(i)) => i.to_string(),
+            _ => "".to_string(),
+        };
+        let correlativo = match row.get(2) {
+            Some(Data::Float(f)) => *f as i32,
+            Some(Data::Int(i)) => *i as i32,
+            Some(Data::String(s)) => s.parse::<i32>().unwrap_or(0),
+            _ => 0,
+        };
+        let holgura = match row.get(3) {
+            Some(Data::Float(f)) => *f as i32,
+            Some(Data::Int(i)) => *i as i32,
+            Some(Data::String(s)) => s.parse::<i32>().unwrap_or(0),
+            _ => 0,
+        };
+        let critico = match row.get(4) {
+            Some(Data::String(s)) => s == "true" || s == "True" || s == "TRUE",
+            Some(Data::Int(i)) => *i != 0,
+            Some(Data::Float(f)) => *f != 0.0,
+            _ => false,
+        };
+        
+        if !codigo.is_empty() {
+            ramos_disponibles.insert(codigo.clone(), RamoDisponible {
+                nombre,
+                codigo: codigo.clone(),
+                holgura,
+                numb_correlativo: correlativo,
+                critico,
+                codigo_ref: Some(codigo),
+            });
         }
     }
+    
+    Ok(ramos_disponibles)
+}
 
-    println!("\nRamos no críticos:");
-    for (codigo, ramo) in &ramos_disponibles {
-        if !ramo.critico {
-            println!("->> {} - {}", ramo.nombre, codigo);
+// Nueva función para leer Excel de oferta académica
+fn leer_oferta_academica_excel(nombre_archivo: &str) -> Result<Vec<Seccion>, Box<dyn std::error::Error>> {
+    let mut workbook: Xlsx<_> = open_workbook(nombre_archivo)?;
+    let mut secciones = Vec::new();
+    
+    // Obtener la primera hoja disponible
+    let sheet_names = workbook.sheet_names().to_owned();
+    if sheet_names.is_empty() {
+        return Err("No se encontraron hojas en el archivo Excel".into());
+    }
+    
+    let primera_hoja = &sheet_names[0];
+    println!("Leyendo hoja: {}", primera_hoja);
+    
+    let range = workbook.worksheet_range(primera_hoja)?;
+    
+    for (row_idx, row) in range.rows().enumerate() {
+        if row_idx == 0 { continue; } // Saltar header
+        
+        let codigo = match row.get(0) {
+            Some(Data::String(s)) => s.clone(),
+            Some(Data::Float(f)) => f.to_string(),
+            Some(Data::Int(i)) => i.to_string(),
+            _ => "".to_string(),
+        };
+        let nombre = match row.get(1) {
+            Some(Data::String(s)) => s.clone(),
+            Some(Data::Float(f)) => f.to_string(),
+            Some(Data::Int(i)) => i.to_string(),
+            _ => "".to_string(),
+        };
+        let seccion = match row.get(2) {
+            Some(Data::String(s)) => s.clone(),
+            Some(Data::Float(f)) => f.to_string(),
+            Some(Data::Int(i)) => i.to_string(),
+            _ => "".to_string(),
+        };
+        let horario_str = match row.get(3) {
+            Some(Data::String(s)) => s.clone(),
+            Some(Data::Float(f)) => f.to_string(),
+            Some(Data::Int(i)) => i.to_string(),
+            _ => "".to_string(),
+        };
+        let profesor = match row.get(4) {
+            Some(Data::String(s)) => s.clone(),
+            Some(Data::Float(f)) => f.to_string(),
+            Some(Data::Int(i)) => i.to_string(),
+            _ => "".to_string(),
+        };
+        let codigo_box = match row.get(5) {
+            Some(Data::String(s)) => s.clone(),
+            Some(Data::Float(f)) => f.to_string(),
+            Some(Data::Int(i)) => i.to_string(),
+            _ => codigo.clone(),
+        };
+        
+        // Parsear horarios (separados por comas o punto y coma)
+        let horario: Vec<String> = horario_str
+            .split(|c| c == ',' || c == ';')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        
+        if !codigo.is_empty() {
+            secciones.push(Seccion {
+                codigo,
+                nombre,
+                seccion,
+                horario,
+                profesor,
+                codigo_box,
+            });
         }
     }
+    
+    Ok(secciones)
+}
 
-    let nombre_excel_malla = "MallaCurricular2020.xlsx".to_string();
-    (ramos_disponibles, nombre_excel_malla)
+// Traducción de rutaCritica.py - función getRamoCritico
+fn get_ramo_critico() -> (HashMap<String, RamoDisponible>, String) {
+    println!("Leyendo ramos críticos desde Excel...");
+    
+    let nombre_excel_malla = "MiMalla.xlsx";
+    
+    // Intentar leer desde Excel primero
+    match leer_malla_excel(nombre_excel_malla) {
+        Ok(ramos_disponibles) => {
+            println!("✅ Datos leídos exitosamente desde {}", nombre_excel_malla);
+            
+            println!("Ramos críticos:");
+            for (codigo, ramo) in &ramos_disponibles {
+                if ramo.critico {
+                    println!("->> {} - {}", ramo.nombre, codigo);
+                }
+            }
+
+            println!("\nRamos no críticos:");
+            for (codigo, ramo) in &ramos_disponibles {
+                if !ramo.critico {
+                    println!("->> {} - {}", ramo.nombre, codigo);
+                }
+            }
+            
+            (ramos_disponibles, nombre_excel_malla.to_string())
+        }
+        Err(e) => {
+            println!("⚠️  No se pudo leer el archivo Excel: {}", e);
+            println!("Usando datos de ejemplo...");
+            
+            // Fallback a datos simulados
+            let mut ramos_disponibles = HashMap::new();
+            
+            ramos_disponibles.insert("CIT3313".to_string(), RamoDisponible {
+                nombre: "Algoritmos y Programación".to_string(),
+                codigo: "CIT3313".to_string(),
+                holgura: 0,
+                numb_correlativo: 53,
+                critico: true,
+                codigo_ref: Some("CIT3313".to_string()),
+            });
+            
+            ramos_disponibles.insert("CIT3211".to_string(), RamoDisponible {
+                nombre: "Bases de Datos".to_string(),
+                codigo: "CIT3211".to_string(),
+                holgura: 0, // Ramo crítico
+                numb_correlativo: 52,
+                critico: true,
+                codigo_ref: Some("CIT3211".to_string()),
+            });
+            
+            // Simular ramos no críticos
+            ramos_disponibles.insert("CIT3413".to_string(), RamoDisponible {
+                nombre: "Redes de Computadores".to_string(),
+                codigo: "CIT3413".to_string(),
+                holgura: 2, // Ramo no crítico
+                numb_correlativo: 54,
+                critico: false,
+                codigo_ref: Some("CIT3413".to_string()),
+            });
+            
+            ramos_disponibles.insert("CFG-1".to_string(), RamoDisponible {
+                nombre: "Curso de Formación General".to_string(),
+                codigo: "CFG-1".to_string(),
+                holgura: 3,
+                numb_correlativo: 10,
+                critico: false,
+                codigo_ref: Some("CFG-1".to_string()),
+            });
+
+            (ramos_disponibles, nombre_excel_malla.to_string())
+        }
+    }
 }
 
 // Traducción de extract_data.py - función extract_data
@@ -149,31 +308,48 @@ fn extract_data(
 ) -> (Vec<Seccion>, HashMap<String, RamoDisponible>) {
     println!("Procesando extract_data...");
     
-    let mut lista_secciones = Vec::new();
+    let oferta_academica_file = "OfertaAcademica2024.xlsx";
     
-    // Simular datos de secciones (en la implementación real se leería de Excel)
-    for (codigo_box, ramo) in ramos_disponibles {
-        // Crear múltiples secciones para cada ramo
-        for seccion_num in 1..=2 {
-            let horarios = match seccion_num {
-                1 => vec!["LU 08:30".to_string(), "MI 08:30".to_string()],
-                2 => vec!["MA 10:00".to_string(), "JU 10:00".to_string()],
-                _ => vec!["VI 14:30".to_string()],
-            };
-            
-            lista_secciones.push(Seccion {
-                codigo: format!("{}-SEC{}", ramo.codigo, seccion_num),
-                nombre: ramo.nombre.clone(),
-                seccion: seccion_num.to_string(),
-                horario: horarios,
-                profesor: format!("Profesor {}", seccion_num),
-                codigo_box: codigo_box.clone(),
+    // Intentar leer oferta académica desde Excel
+    match leer_oferta_academica_excel(oferta_academica_file) {
+        Ok(mut lista_secciones) => {
+            // Filtrar solo las secciones que corresponden a ramos disponibles
+            lista_secciones.retain(|seccion| {
+                ramos_disponibles.contains_key(&seccion.codigo_box) ||
+                ramos_disponibles.iter().any(|(_, ramo)| ramo.codigo == seccion.codigo_box)
             });
+            
+            println!("✅ Se encontraron {} secciones desde Excel", lista_secciones.len());
+            (lista_secciones, ramos_disponibles.clone())
+        }
+        Err(e) => {
+            println!("⚠️  No se pudo leer oferta académica: {}", e);
+            println!("Generando datos simulados...");
+            
+            // Fallback a datos simulados
+            let mut lista_secciones = Vec::new();
+            for (codigo_box, ramo) in ramos_disponibles {
+                for seccion_num in 1..=2 {
+                    let horarios = match seccion_num {
+                        1 => vec!["LU 08:30".to_string(), "MI 08:30".to_string()],
+                        2 => vec!["MA 10:00".to_string(), "JU 10:00".to_string()],
+                        _ => vec!["VI 14:30".to_string()],
+                    };
+                    
+                    lista_secciones.push(Seccion {
+                        codigo: format!("{}-SEC{}", ramo.codigo, seccion_num),
+                        nombre: ramo.nombre.clone(),
+                        seccion: seccion_num.to_string(),
+                        horario: horarios,
+                        profesor: format!("Profesor {}", seccion_num),
+                        codigo_box: codigo_box.clone(),
+                    });
+                }
+            }
+            
+            (lista_secciones, ramos_disponibles.clone())
         }
     }
-
-    println!("Se encontraron {} secciones disponibles", lista_secciones.len());
-    (lista_secciones, ramos_disponibles.clone())
 }
 
 // Función auxiliar para verificar conflictos de horario
