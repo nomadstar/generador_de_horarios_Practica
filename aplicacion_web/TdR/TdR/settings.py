@@ -63,6 +63,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'allauth.account.middleware.AccountMiddleware',
 ]
 
 # CORS DEVELOPMENT SERVER
@@ -80,8 +81,13 @@ FILE_UPLOAD_HANDLERS = ("django_excel.ExcelMemoryFileUploadHandler",
                         "django_excel.TemporaryExcelFileUploadHandler")
 ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '200.14.84.238',
                  'asistente-eit.udp.cl', '104.18.25.162:443']
-CSRF_TRUSTED_ORIGINS = ['127.0.0.1', 'localhost',
-                        'http://200.14.84.238:80/', '104.18.25.162:443', 'asistente-eit.udp.cl']
+CSRF_TRUSTED_ORIGINS = [
+    'http://127.0.0.1',
+    'http://localhost',
+    'http://200.14.84.238:80',
+    'https://104.18.25.162:443',
+    'https://asistente-eit.udp.cl',
+]
 
 
 ROOT_URLCONF = 'TdR.urls'
@@ -118,12 +124,8 @@ WSGI_APPLICATION = 'TdR.wsgi.application'
 # https://docs.djangoproject.com/en/3.1/ref/settings/#databases
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql_psycopg2',
-        'NAME': env("DATABASE_NAME"),
-        'USER': env("DATABASE_USER"),
-        'PASSWORD': env("DATABASE_PASSWORD"),
-        'HOST': env("DATABASE_HOST"),
-        'PORT': env("DATABASE_PORT"),
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': env("DATABASE_NAME", default=os.path.join(BASE_DIR, "db.sqlite3")),
     }
 }
 AUTHENTICATION_BACKENDS = [
