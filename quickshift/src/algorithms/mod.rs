@@ -174,7 +174,7 @@ pub fn find_max_weight_clique(
 pub fn get_clique_max_pond(
     lista_secciones: &Vec<Seccion>,
     ramos_disponibles: &HashMap<String, RamoDisponible>,
-) {
+) -> Vec<Vec<(Seccion, i32)>> {
     println!("=== Generador de Horarios ===");
     println!("Ramos disponibles:\n");
     
@@ -247,42 +247,50 @@ pub fn get_clique_max_pond(
     // Encontrar múltiples soluciones
     let mut prev_solutions = Vec::new();
     let mut graph_copy = graph.clone();
-    
-    for solution_num in 1..=5 {
+    let mut solutions: Vec<Vec<(Seccion, i32)>> = Vec::new();
+
+    for _solution_num in 1..=5 {
         let max_clique = find_max_weight_clique(&graph_copy, &priorities);
-        
+
         if max_clique.len() <= 2 {
             println!("\n---------------");
             println!("Solo quedan soluciones con 2 o menos ramos");
             break;
         }
-        
+
         let mut arr_aux_delete: Vec<(NodeIndex, i32)> = max_clique
             .iter()
             .map(|&idx| (idx, *priorities.get(&idx).unwrap_or(&0)))
             .collect();
-        
+
         arr_aux_delete.sort_by_key(|&(_, prio)| prio);
-        
+
         // Limitar a 6 ramos máximo
         while arr_aux_delete.len() > 6 {
             arr_aux_delete.remove(0);
         }
-        
+
         // Verificar si ya se encontró esta solución
         let solution_key: Vec<_> = arr_aux_delete.iter().map(|&(idx, _)| idx).collect();
         if prev_solutions.contains(&solution_key) {
+            // eliminar primer nodo y continuar
+            if !arr_aux_delete.is_empty() {
+                graph_copy.remove_node(arr_aux_delete[0].0);
+            }
             continue;
         }
-        
+
         println!("---------------");
-        println!("\nSolución Recomendada #{}:\n", solution_num);
-        
+        println!("\nSolución Recomendada :\n");
+
+        // Construir la solución serializable
+        let mut solution_entries: Vec<(Seccion, i32)> = Vec::new();
+
         for &(node_idx, prioridad) in &arr_aux_delete {
             let seccion_idx = graph_copy[node_idx];
-            let seccion = &lista_secciones[seccion_idx];
+            let seccion = lista_secciones[seccion_idx].clone();
             let codigo_corto = &seccion.codigo[..std::cmp::min(7, seccion.codigo.len())];
-            
+
             println!(
                 "{} || {} - Sección: {} | Horario -> {:?} || {}",
                 codigo_corto,
@@ -291,15 +299,20 @@ pub fn get_clique_max_pond(
                 seccion.horario,
                 prioridad
             );
+
+            solution_entries.push((seccion, prioridad));
         }
-        
+
+        solutions.push(solution_entries);
         prev_solutions.push(solution_key);
-        
+
         // Remover un nodo para la siguiente iteración
         if !arr_aux_delete.is_empty() {
             graph_copy.remove_node(arr_aux_delete[0].0);
         }
     }
+
+    solutions
 }
 
 // Funciones auxiliares privadas
