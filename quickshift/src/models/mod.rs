@@ -1,5 +1,6 @@
 // Estructuras de datos principales
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct Seccion {
     pub codigo: String,
@@ -10,6 +11,7 @@ pub struct Seccion {
     pub codigo_box: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct RamoDisponible {
     pub nombre: String,
@@ -20,6 +22,7 @@ pub struct RamoDisponible {
     pub codigo_ref: Option<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct PertNode {
     pub codigo: String,

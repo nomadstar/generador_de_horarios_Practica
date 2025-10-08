@@ -7,6 +7,7 @@ use crate::models::{Seccion, RamoDisponible, PertNode};
 use crate::excel::{leer_malla_excel, leer_oferta_academica_excel};
 
 // Función de ruta crítica
+#[allow(dead_code)]
 pub fn set_values_recursive(
     pert: &mut DiGraph<PertNode, ()>,
     node_idx: NodeIndex,
