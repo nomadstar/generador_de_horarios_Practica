@@ -63,7 +63,7 @@ def secciones_cfg(lista_secciones, cant_cfg_malla, cant_cfg_aprobados, cfg_aprob
     # cuales ha tomado
 
     oferta_cfg = np.array(pd.read_excel(
-        'CURSOS-DE-FORMACIÓN-GENERAL.xlsx', sheet_name='Sheet1'))
+        'CURSOS-DE-FORMACIÓN-GENERAL.xlsx', sheet_name='MiMalla.xlsx', engine='openpyxl'))
     for z in range(cant_cfg_aprobados+1, cant_cfg_malla+1):
         aux_horario = []
         for i in range(0, len(oferta_cfg)):

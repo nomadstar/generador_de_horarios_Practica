@@ -12,9 +12,52 @@ use crate::models::{Seccion, RamoDisponible};
 
 fn read_sheet_rows(file: &str, sheet_name: &str) -> Result<Vec<Vec<String>>, Box<dyn Error>> {
     let mut workbook: Xlsx<_> = open_workbook(file)?;
-    let range = workbook.worksheet_range(sheet_name)
-        .map_err(|e| format!("error reading sheet {}: {}", sheet_name, e))?;
 
+    // Try the requested sheet first. If it fails with a RangeWithoutRowComponent
+    // or the sheet is missing, try a fallback sequence: "MiMalla" then the first sheet.
+    let try_sheets = vec![sheet_name.to_string(), "Mi Malla".to_string(), "MiMalla".to_string()];
+    let mut last_err: Option<String> = None;
+
+    for candidate in try_sheets.iter() {
+        match workbook.worksheet_range(candidate) {
+            Ok(range) => {
+                println!("Leyendo hoja: {} (usada como '{}')", candidate, sheet_name);
+                return rows_from_range(range);
+            }
+            Err(e) => {
+                println!("No se pudo leer la hoja '{}': {:?}", candidate, e);
+                last_err = Some(format!("{}: {}", candidate, e));
+            }
+        }
+    }
+
+    // Fallback to the first sheet available
+    let sheet_names = workbook.sheet_names().to_owned();
+    if !sheet_names.is_empty() {
+        // Try every sheet and pick the first with a non-empty range (height >= 2)
+        for name in sheet_names.iter() {
+            match workbook.worksheet_range(name) {
+                Ok(rng) => {
+                    let size = rng.get_size();
+                    if size.0 >= 2 {
+                        println!("Seleccionando hoja válida: {} ({} filas, {} cols)", name, size.0, size.1);
+                        return rows_from_range(rng);
+                    } else {
+                        println!("Hoja {} descartada por tamaño: {:?}", name, size);
+                    }
+                }
+                Err(e) => {
+                    println!("No se pudo leer la hoja '{}': {:?}", name, e);
+                    last_err = Some(format!("{}: {}", name, e));
+                }
+            }
+        }
+    }
+
+    Err(format!("No se pudo leer ninguna hoja del archivo '{}'. Último error: {}", file, last_err.unwrap_or_else(|| "sin detalles".to_string())).into())
+}
+
+fn rows_from_range(range: calamine::Range<calamine::Data>) -> Result<Vec<Vec<String>>, Box<dyn Error>> {
     let mut rows_out: Vec<Vec<String>> = Vec::new();
     for row in range.rows() {
         let mut out_row: Vec<String> = Vec::new();

@@ -50,15 +50,58 @@ pub fn set_values_recursive(
 }
 
 // Obtener ramos críticos
-pub fn get_ramo_critico() -> (HashMap<String, RamoDisponible>, String) {
+pub fn get_ramo_critico() -> (HashMap<String, RamoDisponible>, String, bool) {
     println!("Leyendo ramos críticos desde Excel...");
     
     let nombre_excel_malla = "MiMalla.xlsx";
+    // Intentar leer porcentajes de aprobados (archivo adicional)
+    let porcentajes_file = "../RutaCritica/PorcentajeAPROBADOS2025-1.xlsx";
     
     // Intentar leer desde Excel primero
     match leer_malla_excel(nombre_excel_malla) {
         Ok(ramos_disponibles) => {
             println!("✅ Datos leídos exitosamente desde {}", nombre_excel_malla);
+            // Intentar cargar porcentajes y propagarlos a los ramos
+            match crate::excel::leer_porcentajes_aprobados(porcentajes_file) {
+                Ok(pc_map) => {
+                    println!("📊 Datos de aprobados cargados: {} entradas", pc_map.len());
+                    // Crear nueva mapa y asignar dificultad cuando exista: ID = A / n (fracción 0..1)
+                    let mut new_map = ramos_disponibles.clone();
+                    for (codigo, ramo) in new_map.iter_mut() {
+                        // buscar por codigo o codigo_ref
+                        if let Some(&(a, n)) = pc_map.get(codigo) {
+                            if n > 0.0 {
+                                ramo.dificultad = Some(a / n);
+                            }
+                        } else if let Some(ref cr) = ramo.codigo_ref {
+                            if let Some(&(a, n)) = pc_map.get(cr) {
+                                if n > 0.0 {
+                                    ramo.dificultad = Some(a / n);
+                                }
+                            }
+                        }
+                    }
+
+                    println!("Ramos críticos (dificultad ID = A/n):");
+                    for (codigo, ramo) in &new_map {
+                        if ramo.critico {
+                            println!("->> {} - {} (ID: {:?})", ramo.nombre, codigo, ramo.dificultad.map(|v| format!("{:.3}", v)).unwrap_or_else(|| "n/a".to_string()));
+                        }
+                    }
+
+                    println!("\nRamos no críticos (ID mostrada):");
+                    for (codigo, ramo) in &new_map {
+                        if !ramo.critico {
+                            println!("->> {} - {} (ID: {:?})", ramo.nombre, codigo, ramo.dificultad.map(|v| format!("{:.3}", v)).unwrap_or_else(|| "n/a".to_string()));
+                        }
+                    }
+
+                    return (new_map, nombre_excel_malla.to_string(), true);
+                }
+                Err(e) => {
+                    println!("⚠️ No se pudo leer porcentajes: {}. Procediendo sin dificultad.", e);
+                }
+            }
             
             println!("Ramos críticos:");
             for (codigo, ramo) in &ramos_disponibles {
@@ -74,14 +117,15 @@ pub fn get_ramo_critico() -> (HashMap<String, RamoDisponible>, String) {
                 }
             }
             
-            (ramos_disponibles, nombre_excel_malla.to_string())
+            (ramos_disponibles, nombre_excel_malla.to_string(), true)
         }
         Err(e) => {
             println!("⚠️  No se pudo leer el archivo Excel: {}", e);
             println!("Usando datos de ejemplo...");
             
             // Fallback a datos simulados
-            create_fallback_data(nombre_excel_malla)
+            let (mapa, nombre) = create_fallback_data(nombre_excel_malla);
+            (mapa, nombre, false)
         }
     }
 }
@@ -90,14 +134,42 @@ pub fn get_ramo_critico() -> (HashMap<String, RamoDisponible>, String) {
 pub fn extract_data(
     ramos_disponibles: &HashMap<String, RamoDisponible>,
     _nombre_excel_malla: &str,
-) -> (Vec<Seccion>, HashMap<String, RamoDisponible>) {
+) -> (Vec<Seccion>, HashMap<String, RamoDisponible>, bool) {
     println!("Procesando extract_data...");
     
-    let oferta_academica_file = "OfertaAcademica2024.xlsx";
+    // Use the Oferta Academica file bundled with the RutaCritica folder (path relative from quickshift/)
+    let oferta_academica_file = "../RutaCritica/Oferta Academica 2021-1 vacantes 2021-02-04.xlsx";
     
     // Intentar leer oferta académica desde Excel
     match leer_oferta_academica_excel(oferta_academica_file) {
         Ok(mut lista_secciones) => {
+            // Normalizar posibles valores inválidos en codigo_box (RUTs, horarios, 'X', números)
+            for s in lista_secciones.iter_mut() {
+                let cb = s.codigo_box.trim();
+                let mut normalized = cb.to_string();
+
+                // If codigo_box is empty, 'X' or looks like a RUT/number/hours (contains digits and dots or ':' or spaces), derive from s.codigo
+                let looks_bad = normalized.is_empty()
+                    || normalized == "X"
+                    || normalized.chars().all(|c| c.is_numeric() || c == '.' || c == '-')
+                    || normalized.chars().any(|c| c == ':' )
+                    || normalized.split_whitespace().count() > 1 && normalized.chars().any(|c| c.is_numeric());
+
+                if looks_bad {
+                    // derive from s.codigo: take up to first space or '-' (e.g., "CBF1001 - CÁLCULO III" -> "CBF1001")
+                    let derived = s.codigo.split(|c: char| c == ' ' || c == '-').next().unwrap_or(&s.codigo).to_string();
+                    if !derived.is_empty() {
+                        normalized = derived;
+                    }
+                }
+
+                // Also remove stray dots and trim
+                normalized = normalized.replace('.', "").trim().to_string();
+
+                // assign back
+                s.codigo_box = normalized;
+            }
+
             // Filtrar solo las secciones que corresponden a ramos disponibles
             lista_secciones.retain(|seccion| {
                 ramos_disponibles.contains_key(&seccion.codigo_box) ||
@@ -105,14 +177,15 @@ pub fn extract_data(
             });
             
             println!("✅ Se encontraron {} secciones desde Excel", lista_secciones.len());
-            (lista_secciones, ramos_disponibles.clone())
+            (lista_secciones, ramos_disponibles.clone(), true)
         }
         Err(e) => {
             println!("⚠️  No se pudo leer oferta académica: {}", e);
             println!("Generando datos simulados...");
             
             // Fallback a datos simulados
-            create_simulated_sections(ramos_disponibles)
+            let (secs, map) = create_simulated_sections(ramos_disponibles);
+            (secs, map, false)
         }
     }
 }
@@ -175,7 +248,7 @@ pub fn find_max_weight_clique(
 pub fn get_clique_max_pond(
     lista_secciones: &Vec<Seccion>,
     ramos_disponibles: &HashMap<String, RamoDisponible>,
-) -> Vec<Vec<(Seccion, i32)>> {
+) -> Vec<(Vec<(Seccion, i32)>, i64)> {
     println!("=== Generador de Horarios ===");
     println!("Ramos disponibles:\n");
     
@@ -248,7 +321,7 @@ pub fn get_clique_max_pond(
     // Encontrar múltiples soluciones
     let mut prev_solutions = Vec::new();
     let mut graph_copy = graph.clone();
-    let mut solutions: Vec<Vec<(Seccion, i32)>> = Vec::new();
+    let mut solutions: Vec<(Vec<(Seccion, i32)>, i64)> = Vec::new();
 
     for _solution_num in 1..=5 {
         let max_clique = find_max_weight_clique(&graph_copy, &priorities);
@@ -285,7 +358,8 @@ pub fn get_clique_max_pond(
         println!("\nSolución Recomendada :\n");
 
         // Construir la solución serializable
-        let mut solution_entries: Vec<(Seccion, i32)> = Vec::new();
+    let mut solution_entries: Vec<(Seccion, i32)> = Vec::new();
+    let mut total_score_i64: i64 = 0;
 
         for &(node_idx, prioridad) in &arr_aux_delete {
             let seccion_idx = graph_copy[node_idx];
@@ -302,9 +376,10 @@ pub fn get_clique_max_pond(
             );
 
             solution_entries.push((seccion, prioridad));
+            total_score_i64 += prioridad as i64;
         }
 
-        solutions.push(solution_entries);
+        solutions.push((solution_entries, total_score_i64));
         prev_solutions.push(solution_key);
 
         // Remover un nodo para la siguiente iteración
@@ -327,6 +402,7 @@ fn create_fallback_data(nombre_excel_malla: &str) -> (HashMap<String, RamoDispon
         numb_correlativo: 53,
         critico: true,
         codigo_ref: Some("CIT3313".to_string()),
+        dificultad: None,
     });
     
     ramos_disponibles.insert("CIT3211".to_string(), RamoDisponible {
@@ -336,6 +412,7 @@ fn create_fallback_data(nombre_excel_malla: &str) -> (HashMap<String, RamoDispon
         numb_correlativo: 52,
         critico: true,
         codigo_ref: Some("CIT3211".to_string()),
+        dificultad: None,
     });
     
     ramos_disponibles.insert("CIT3413".to_string(), RamoDisponible {
@@ -345,6 +422,7 @@ fn create_fallback_data(nombre_excel_malla: &str) -> (HashMap<String, RamoDispon
         numb_correlativo: 54,
         critico: false,
         codigo_ref: Some("CIT3413".to_string()),
+        dificultad: None,
     });
     
     ramos_disponibles.insert("CFG-1".to_string(), RamoDisponible {
@@ -354,6 +432,7 @@ fn create_fallback_data(nombre_excel_malla: &str) -> (HashMap<String, RamoDispon
         numb_correlativo: 10,
         critico: false,
         codigo_ref: Some("CFG-1".to_string()),
+        dificultad: None,
     });
 
     (ramos_disponibles, nombre_excel_malla.to_string())

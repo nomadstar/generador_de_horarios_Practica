@@ -13,7 +13,7 @@ pub fn run_clique(lista_secciones: &Vec<Seccion>, ramos_disponibles: &HashMap<St
 /// Versión helper que construye datos de ejemplo y ejecuta el algoritmo.
 pub fn run_clique_example() {
     // Usar la API pública que ya provee fallbacks internamente
-    let (ramos_disponibles, nombre_malla) = crate::algorithms::get_ramo_critico();
-    let (lista_secciones, _) = crate::algorithms::extract_data(&ramos_disponibles, &nombre_malla);
+    let (ramos_disponibles, nombre_malla, _malla_leida) = crate::algorithms::get_ramo_critico();
+    let (lista_secciones, _, _oferta_leida) = crate::algorithms::extract_data(&ramos_disponibles, &nombre_malla);
     run_clique(&lista_secciones, &ramos_disponibles);
 }

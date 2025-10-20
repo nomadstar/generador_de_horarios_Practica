@@ -11,8 +11,8 @@ pub mod ruta;
 pub fn run_ruta_critica() -> Result<(), Box<dyn std::error::Error>> {
     println!("[rutacritica] Iniciando run_ruta_critica...");
 
-    // 1) Obtener ramos críticos (devuelve mapa y nombre de archivo de malla)
-    let (ramos_disponibles, nombre_excel_malla) = crate::algorithms::get_ramo_critico();
+    // 1) Obtener ramos críticos (devuelve mapa, nombre de archivo de malla y flag de lectura)
+    let (ramos_disponibles, nombre_excel_malla, _malla_leida) = crate::algorithms::get_ramo_critico();
 
     println!(
         "[rutacritica] Ramos disponibles: {} entradas. Malla: {}",

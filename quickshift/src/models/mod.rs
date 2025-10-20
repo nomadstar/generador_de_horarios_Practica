@@ -1,7 +1,7 @@
 // Estructuras de datos principales
 
 #[allow(dead_code)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct Seccion {
     pub codigo: String,
     pub nombre: String,
@@ -12,7 +12,7 @@ pub struct Seccion {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct RamoDisponible {
     pub nombre: String,
     pub codigo: String,
@@ -20,10 +20,13 @@ pub struct RamoDisponible {
     pub numb_correlativo: i32,
     pub critico: bool,
     pub codigo_ref: Option<String>,
+    /// Porcentaje de aprobados (0.0 - 100.0). Se usará como estimador de dificultad inversa.
+    /// Valores cercanos a 0 => muy difícil, cercanos a 100 => muy fácil.
+    pub dificultad: Option<f64>,
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct PertNode {
     pub codigo: String,
     pub nombre: String,
